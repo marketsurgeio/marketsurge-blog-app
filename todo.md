@@ -222,3 +222,41 @@ gcloud run deploy blog-forge --image gcr.io/<proj>/blog-forge --platform managed
 - [ ] Thumbnail displays in OG debugger
 - [ ] OpenAI cost alarm hits Slack test channel
 - [ ] Merge → Vercel preview green 
+
+## 10. Fast-track Patches
+- [ ] Unify usage + cost guard
+  - Merge checkUsageLimit into Firestore-based costGuard
+  - Drop the Map storage
+- [ ] Add /api/publish endpoint
+  - Implement GHL POST /blogs/posts payload
+  - Add proper error handling
+- [ ] Migrate storage
+  - Swap Map storage for Firestore or Planetscale
+  - Create drafts + posts collections
+- [ ] Implement word-count loop
+  - Add sentinel WORD_COUNT in footer
+  - Retry generation until ≥ 1900 words
+- [ ] Integrate thumbnail generation
+  - Wire /api/thumbnail into article generation
+  - Store S3 URL in Firestore
+- [ ] Documentation
+  - Create .env.example with all required variables:
+    - Clerk
+    - Firebase
+    - OpenAI
+    - GHL
+- [ ] Testing
+  - Add Jest unit test for usage tracking
+  - Implement Playwright smoke test for /generate
+- [ ] CI/CD
+  - Set up GitHub Action:
+    - pnpm lint
+    - pnpm test
+    - next build
+- [ ] Security hardening
+  - Add next-secure-headers
+  - Implement rate limiting for API routes
+  - Add origin checking for POST requests
+- [ ] Deployment
+  - Automate Vercel deployment
+  - Verify Edge runtime compatibility 

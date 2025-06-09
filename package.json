@@ -4,11 +4,16 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "jest"
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui"
   },
   "dependencies": {
     "@clerk/nextjs": "^6.21.0",
     "@napi-rs/canvas": "^0.1.70",
+    "@upstash/ratelimit": "^1.2.1",
+    "@upstash/redis": "^1.35.0",
     "canvas": "^3.1.0",
     "clsx": "^2.1.1",
     "firebase": "^11.9.0",
@@ -26,8 +31,11 @@
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
-    "@testing-library/jest-dom": "^6.6.3",
-    "@types/jest": "^29.5.14",
+    "@playwright/test": "^1.42.1",
+    "@testing-library/jest-dom": "^6.4.2",
+    "@testing-library/react": "^14.2.1",
+    "@testing-library/user-event": "^14.5.2",
+    "@types/jest": "^29.5.12",
     "@types/node": "^20.19.0",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
@@ -36,11 +44,12 @@
     "eslint": "^8.0.0",
     "eslint-config-next": "14.1.0",
     "jest": "^29.7.0",
+    "jest-environment-jsdom": "^29.7.0",
     "msw": "^2.10.1",
     "postcss": "^8.4.35",
     "supertest": "^7.1.1",
     "tailwindcss": "^3.4.1",
-    "ts-jest": "^29.3.4",
+    "ts-jest": "^29.1.2",
     "tsconfig-paths": "^4.2.0",
     "typescript": "^5"
   }

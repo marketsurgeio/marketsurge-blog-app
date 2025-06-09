@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuth } from '@clerk/nextjs/server';
 import OpenAI from 'openai';
-import { checkAndUpdateUsage } from '@/lib/costGuard';
+import { costGuard } from '@/lib/costGuard';
 import { getPromptById, formatPrompt } from '@/lib/prompts/marketsurge';
 
 const openai = new OpenAI({
@@ -31,9 +31,10 @@ export async function POST(req: NextRequest) {
     }
 
     // Check usage and budget
-    const usageCheck = await checkAndUpdateUsage(userId, 1000); // Estimate 1000 tokens for ideas
-    if (!usageCheck.allowed) {
-      console.error('Usage limit exceeded:', { userId, remainingBudget: usageCheck.remainingBudget });
+    const estimatedTokens = 1000; // Estimate 1000 tokens for ideas
+    const canProceed = await costGuard.checkUsageLimit(userId, estimatedTokens);
+    if (!canProceed) {
+      console.error('Usage limit exceeded:', { userId, remainingBudget: canProceed });
       return NextResponse.json(
         { error: 'Daily budget exceeded' },
         { status: 429 }

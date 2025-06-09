@@ -1,93 +1,104 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
-import { checkAndUpdateUsage } from '@/lib/costGuard';
-import { publishPost, GHLError } from '@/lib/ghl';
+import { ghlClient, GHLError, GHL_ERROR_CODES } from '@/lib/ghl';
+import { costGuard } from '@/lib/costGuard';
+import { getFirestore, collection, doc, setDoc } from 'firebase/firestore';
 import { logger } from '@/lib/logger';
 
-export async function POST(request: NextRequest) {
+export async function POST(req: NextRequest) {
   try {
     const session = await auth();
     if (!session?.userId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    // Check usage before proceeding (estimate 500 tokens for publishing)
-    const canProceed = await checkAndUpdateUsage(session.userId, 500);
-    if (!canProceed) {
       return NextResponse.json(
-        { error: 'Daily budget exceeded' },
-        { status: 429 }
+        { error: 'Unauthorized' },
+        { status: 401 }
       );
     }
 
-    const body = await request.json();
-    logger.info('Received publish request body:', { 
-      hasTitle: !!body.title,
-      hasContent: !!body.content,
-      hasThumbnail: !!body.thumbnailUrl,
-      hasIndustry: !!body.industry,
-      contentLength: body.content?.length
-    });
+    const { title, content, featuredImageUrl } = await req.json();
 
-    const { title, content, thumbnailUrl, industry } = body;
-
-    // Validate required fields
-    const missingFields = [];
-    if (!title) missingFields.push('title');
-    if (!content) missingFields.push('content');
-    if (!thumbnailUrl) missingFields.push('thumbnailUrl');
-    if (!industry) missingFields.push('industry');
-
-    if (missingFields.length > 0) {
-      logger.error('Missing required fields', { missingFields });
+    if (!title || !content) {
       return NextResponse.json(
-        { error: `Missing required fields: ${missingFields.join(', ')}` },
+        { error: 'Title and content are required' },
         { status: 400 }
       );
     }
 
-    // Validate field types
-    if (typeof title !== 'string') {
-      return NextResponse.json({ error: 'Title must be a string' }, { status: 400 });
-    }
-    if (typeof content !== 'string') {
-      return NextResponse.json({ error: 'Content must be a string' }, { status: 400 });
-    }
-    if (typeof thumbnailUrl !== 'string') {
-      return NextResponse.json({ error: 'Thumbnail URL must be a string' }, { status: 400 });
-    }
-    if (typeof industry !== 'string') {
-      return NextResponse.json({ error: 'Industry must be a string' }, { status: 400 });
-    }
-
-    // Publish to GHL
-    const ghlResult = await publishPost({
-      title,
-      html: content,
-      featuredImageUrl: thumbnailUrl,
-      status: 'Published'
-    });
-    
-    logger.info('Successfully published to GHL', { ghlId: ghlResult?.id });
-
-    return NextResponse.json({
-      ghl: {
-        id: ghlResult.id,
-        url: ghlResult.url,
-      }
-    });
-  } catch (error) {
-    logger.error('Failed to publish blog post', { error });
-
-    if (error instanceof GHLError) {
+    // Check usage limit
+    const estimatedTokens = Math.ceil(content.length / 4); // Rough estimate
+    const canProceed = await costGuard.checkUsageLimit(session.userId, estimatedTokens);
+    if (!canProceed) {
       return NextResponse.json(
-        { error: error.message },
-        { status: error.code === 'CONFIG_ERROR' ? 500 : 400 }
+        { error: 'Daily usage limit exceeded' },
+        { status: 429 }
       );
     }
 
+    // Publish to GHL
+    try {
+      const response = await ghlClient.publishBlogPost({
+        title,
+        html: content,
+        featuredImageUrl,
+        status: 'Published',
+      });
+
+      logger.info('Successfully published post', {
+        userId: session.userId,
+        postId: response.id,
+        title,
+      });
+
+      // Store in Firestore
+      const db = getFirestore();
+      const postsCollection = collection(db, 'posts');
+      await setDoc(doc(postsCollection, response.id), {
+        userId: session.userId,
+        title,
+        url: response.url,
+        status: 'Published',
+        publishedAt: new Date().toISOString(),
+        ghlPostId: response.id,
+      });
+
+      return NextResponse.json(response);
+    } catch (error) {
+      if (error instanceof GHLError) {
+        switch (error.code) {
+          case GHL_ERROR_CODES.AUTH_ERROR:
+            return NextResponse.json(
+              { error: 'GHL authentication failed' },
+              { status: 401 }
+            );
+          case GHL_ERROR_CODES.RATE_LIMIT:
+            return NextResponse.json(
+              { error: 'GHL rate limit exceeded' },
+              { status: 429 }
+            );
+          case GHL_ERROR_CODES.VALIDATION_ERROR:
+            return NextResponse.json(
+              { error: error.message },
+              { status: 400 }
+            );
+          case GHL_ERROR_CODES.SERVER_ERROR:
+            return NextResponse.json(
+              { error: 'GHL service unavailable' },
+              { status: 503 }
+            );
+          default:
+            return NextResponse.json(
+              { error: 'Failed to publish post' },
+              { status: 500 }
+            );
+        }
+      }
+
+      throw error;
+    }
+  } catch (error) {
+    logger.error('Error in publish endpoint', { error });
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to publish post' },
+      { error: 'Internal server error' },
       { status: 500 }
     );
   }

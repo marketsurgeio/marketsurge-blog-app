@@ -300,7 +300,6 @@ export default function TestPublishPage() {
                 <p>If you&apos;re seeing this post, the publishing flow is working correctly!</p>
               `}
               thumbnailUrl={thumbnailUrl || 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTIwMCIgaGVpZ2h0PSI2MjgiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHJlY3Qgd2lkdGg9IjEyMDAiIGhlaWdodD0iNjI4IiBmaWxsPSIjZjNmNGY2Ii8+PHRleHQgeD0iNjAwIiB5PSIzMTQiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSI0OCIgbGluZS1oZWlnaHQ9IjEiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZpbGw9IiM2YjcyOGIiPlRlc3QgQmxvZyBQb3N0PC90ZXh0Pjwvc3ZnPg=='}
-              categoryId={1}
               industry="Technology"
               onSuccess={(data) => {
                 console.log('Published successfully:', data);

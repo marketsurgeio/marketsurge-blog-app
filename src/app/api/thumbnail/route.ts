@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { checkAndUpdateUsage } from '@/lib/costGuard';
+import { costGuard } from '@/lib/costGuard';
 import { generateThumbnail } from '@/lib/thumbnail';
 import { auth } from '@clerk/nextjs/server';
 import { logger } from '@/lib/logger';
@@ -15,7 +15,7 @@ export async function POST(request: Request) {
     }
 
     // Check usage before proceeding (estimate 1000 tokens for DALL·E)
-    const canProceed = await checkAndUpdateUsage(session.userId, 1000);
+    const canProceed = await costGuard.checkUsageLimit(session.userId, 1000);
     if (!canProceed) {
       return new NextResponse('Daily budget exceeded', { status: 429 });
     }

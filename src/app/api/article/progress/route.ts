@@ -1,23 +1,17 @@
 import { NextResponse } from 'next/server';
-
-let currentProgress = {
-  attempt: 1,
-  maxAttempts: 5,
-  currentWordCount: 0,
-  targetWordCount: 2000
-};
+import { getCurrentProgress } from '@/lib/progress';
 
 export function GET() {
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     start(controller) {
       // Send initial progress immediately
-      const data = `data: ${JSON.stringify(currentProgress)}\n\n`;
+      const data = `data: ${JSON.stringify(getCurrentProgress())}\n\n`;
       controller.enqueue(encoder.encode(data));
 
       const interval = setInterval(() => {
         try {
-          const data = `data: ${JSON.stringify(currentProgress)}\n\n`;
+          const data = `data: ${JSON.stringify(getCurrentProgress())}\n\n`;
           controller.enqueue(encoder.encode(data));
         } catch (error) {
           console.error('Error sending progress update:', error);
@@ -41,8 +35,4 @@ export function GET() {
       'Connection': 'keep-alive',
     },
   });
-}
-
-export function updateProgress(progress: typeof currentProgress) {
-  currentProgress = { ...progress };
 } 

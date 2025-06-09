@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuth } from '@clerk/nextjs/server';
 import { getIdeas } from '@/lib/openai';
-import { checkAndUpdateUsage } from '@/lib/costGuard';
+import { costGuard } from '@/lib/costGuard';
 
 export async function POST(req: NextRequest) {
   try {
@@ -20,8 +20,8 @@ export async function POST(req: NextRequest) {
 
     // 3. Estimate token usage (rough estimate: 100 tokens per idea)
     const estimatedTokens = 300;
-    const costGuardResult = await checkAndUpdateUsage(userId, estimatedTokens);
-    if (!costGuardResult.allowed) {
+    const canProceed = await costGuard.checkUsageLimit(userId, estimatedTokens);
+    if (!canProceed) {
       return NextResponse.json({ error: 'Budget exceeded' }, { status: 403 });
     }
 
