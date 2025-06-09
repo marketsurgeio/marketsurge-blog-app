@@ -2,20 +2,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { ghlClient, GHLError, GHL_ERROR_CODES } from '@/lib/ghl';
 import { costGuard } from '@/lib/costGuard';
-import { getFirestore, collection, doc, setDoc } from 'firebase/firestore';
+import { adminDb } from '@/lib/firebase-admin';
 import { logger } from '@/lib/logger';
 
 export async function POST(req: NextRequest) {
   try {
     const session = await auth();
-    if (!session?.userId) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
+    const userId = session?.userId || 'anonymous';
 
-    const { title, content, featuredImageUrl } = await req.json();
+    const { title, content, industry, keywords, youtubeUrl } = await req.json();
 
     if (!title || !content) {
       return NextResponse.json(
@@ -24,14 +19,16 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Check usage limit
-    const estimatedTokens = Math.ceil(content.length / 4); // Rough estimate
-    const canProceed = await costGuard.checkUsageLimit(session.userId, estimatedTokens);
-    if (!canProceed) {
-      return NextResponse.json(
-        { error: 'Daily usage limit exceeded' },
-        { status: 429 }
-      );
+    // Check usage limit only for authenticated users
+    if (session?.userId) {
+      const estimatedTokens = Math.ceil(content.length / 4); // Rough estimate
+      const canProceed = await costGuard.checkUsageLimit(session.userId, estimatedTokens);
+      if (!canProceed) {
+        return NextResponse.json(
+          { error: 'Daily usage limit exceeded' },
+          { status: 429 }
+        );
+      }
     }
 
     // Publish to GHL
@@ -39,22 +36,25 @@ export async function POST(req: NextRequest) {
       const response = await ghlClient.publishBlogPost({
         title,
         html: content,
-        featuredImageUrl,
         status: 'Published',
+        featuredImageUrl: '' // Required by GHL interface but not used
       });
 
       logger.info('Successfully published post', {
-        userId: session.userId,
+        userId,
         postId: response.id,
         title,
+        industry
       });
 
       // Store in Firestore
-      const db = getFirestore();
-      const postsCollection = collection(db, 'posts');
-      await setDoc(doc(postsCollection, response.id), {
-        userId: session.userId,
+      await adminDb.collection('posts').doc(response.id).set({
+        userId,
         title,
+        content,
+        industry,
+        keywords: keywords || [],
+        youtubeUrl: youtubeUrl || null,
         url: response.url,
         status: 'Published',
         publishedAt: new Date().toISOString(),

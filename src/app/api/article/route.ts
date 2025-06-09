@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuth } from '@clerk/nextjs/server';
 import OpenAI from 'openai';
-import { checkUsageLimit } from '@/lib/usage';
-import { getPromptTemplate } from '@/lib/prompts';
+import { costGuard } from '@/lib/costGuard';
+import { storeArticle } from '@/lib/storage';
 
 // In-memory storage for demo purposes
 // In production, this should be replaced with a proper database
@@ -23,77 +23,94 @@ export async function POST(req: NextRequest) {
 
     // Parse request body
     const body = await req.json();
-    const { title, industry } = body;
-
+    console.log('Article API: Received request body:', body);
+    
+    const { title, industry, keywords, youtubeUrl } = body;
     if (!title || !industry) {
-      console.error('Article API: Missing required fields', { title, industry });
+      console.error('Article API: Missing required fields:', { title, industry });
       return NextResponse.json(
         { error: 'Title and industry are required' },
         { status: 400 }
       );
     }
 
-    // Check usage limits
-    const { canGenerate, remainingBudget } = await checkUsageLimit(userId);
-    if (!canGenerate) {
-      console.error('Article API: Usage limit exceeded for user:', userId);
+    // Check usage and budget
+    const estimatedTokens = 2000; // Estimate 2000 tokens for article
+    const canProceed = await costGuard.checkUsageLimit(userId, estimatedTokens);
+    if (!canProceed) {
+      console.error('Article API: Usage limit exceeded:', { userId, remainingBudget: canProceed });
       return NextResponse.json(
-        { error: 'Daily budget exceeded', remainingBudget },
+        { error: 'Daily budget exceeded' },
         { status: 429 }
       );
     }
 
-    // Get prompt template
-    const promptTemplate = await getPromptTemplate(industry);
-    if (!promptTemplate) {
-      console.error('Article API: No prompt template found for industry:', industry);
+    try {
+      // Generate article using OpenAI
+      const completion = await openai.chat.completions.create({
+        model: 'gpt-4-turbo-preview',
+        messages: [
+          {
+            role: 'system',
+            content: `Write an engaging, informative article titled "${title}" for the ${industry} industry.`
+          }
+        ],
+        temperature: 0.7,
+        max_tokens: 2000,
+      });
+
+      console.log('Article API: Received completion from OpenAI');
+
+      if (!completion.choices[0].message.content) {
+        throw new Error('No content in OpenAI response');
+      }
+
+      const articleData = {
+        title,
+        industry,
+        content: completion.choices[0].message.content,
+        keywords: keywords || [],
+        youtubeUrl: youtubeUrl || null,
+        createdAt: new Date().toISOString()
+      };
+
+      // Store the article data
+      await storeArticle(userId, articleData);
+
+      return NextResponse.json(articleData);
+    } catch (error: any) {
+      console.error('Article API: Error in OpenAI request:', error);
+      
+      // Handle specific error types
+      if (error?.status === 401) {
+        return NextResponse.json(
+          { error: 'OpenAI API key is invalid or missing' },
+          { status: 500 }
+        );
+      }
+      
+      if (error?.status === 429) {
+        return NextResponse.json(
+          { error: 'OpenAI API rate limit exceeded' },
+          { status: 500 }
+        );
+      }
+
       return NextResponse.json(
-        { error: 'No prompt template found for this industry' },
-        { status: 400 }
+        { 
+          error: 'Failed to generate article',
+          details: error?.message || 'Unknown error'
+        },
+        { status: 500 }
       );
     }
-
-    // Format the prompt
-    const prompt = promptTemplate.replace('{title}', title);
-
-    console.log('Article API: Generating article with prompt:', prompt);
-
-    // Generate the article
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4',
-      messages: [
-        {
-          role: 'system',
-          content: 'You are an expert content writer specializing in creating engaging, informative articles.',
-        },
-        {
-          role: 'user',
-          content: prompt,
-        },
-      ],
-      temperature: 0.7,
-      max_tokens: 2000,
-    });
-
-    const articleContent = completion.choices[0]?.message?.content || '';
-
-    // Store the article data
-    const articleData = {
-      title,
-      content: articleContent,
-      industry,
-      status: 'draft',
-      createdAt: new Date().toISOString(),
-    };
-
-    console.log('Article API: Storing article data for user:', userId);
-    articleStorage.set(userId, articleData);
-
-    return NextResponse.json(articleData);
   } catch (error: any) {
-    console.error('Article API: Error generating article:', error);
+    console.error('Article API: Error:', error);
     return NextResponse.json(
-      { error: 'Failed to generate article', details: error.message },
+      { 
+        error: 'Internal server error',
+        details: error?.message || 'Unknown error'
+      },
       { status: 500 }
     );
   }

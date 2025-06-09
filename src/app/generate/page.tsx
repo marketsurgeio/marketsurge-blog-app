@@ -48,34 +48,33 @@ export default function GeneratePage() {
     try {
       console.log('Submitting form with values:', { topic: trimmedTopic, industry: trimmedIndustry });
       
-      const response = await retry(() =>
-        fetch(`${window.location.origin}/api/ideas`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            topic: trimmedTopic,
-            industry: trimmedIndustry,
-            youtubeUrl: values.youtubeUrl
-          }),
-        })
-      );
+      const response = await fetch(`${window.location.origin}/api/ideas`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          topic: trimmedTopic,
+          industry: trimmedIndustry,
+          youtubeUrl: values.youtubeUrl
+        }),
+      });
 
       console.log('Received response:', response.status);
       
       if (!response.ok) {
-        const error = await response.json();
-        console.error('API error:', error);
+        const errorData = await response.json();
+        console.error('API error:', errorData);
         throw new APIError(
-          error.message || 'Failed to generate ideas',
+          errorData.error || 'Failed to generate ideas',
           response.status,
-          error.code || 'SERVER_ERROR'
+          errorData.code || 'SERVER_ERROR',
+          errorData.details
         );
       }
 
       const data = await response.json();
       console.log('Received ideas:', data.ideas);
       
-      if (!data.ideas || data.ideas.length === 0) {
+      if (!data.ideas || !Array.isArray(data.ideas) || data.ideas.length === 0) {
         throw new APIError('No ideas were generated', 500, 'NO_IDEAS');
       }
 
@@ -92,7 +91,12 @@ export default function GeneratePage() {
       console.error('Error in generateIdeas:', error);
       const apiError = error instanceof APIError ? error : new APIError('Failed to generate ideas', 500, 'SERVER_ERROR');
       toast.error(getErrorMessage(apiError));
-      logger.error('Failed to generate ideas', { error: apiError, topic: trimmedTopic, industry: trimmedIndustry });
+      logger.error('Failed to generate ideas', { 
+        error: apiError, 
+        topic: trimmedTopic, 
+        industry: trimmedIndustry,
+        details: apiError.details 
+      });
     } finally {
       setLoading(false);
     }

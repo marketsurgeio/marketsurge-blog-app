@@ -75,10 +75,14 @@ export const MARKET_SURGE_PROMPTS: PromptTemplate[] = [
   }
 ];
 
-export function formatPrompt(template: string, variables: Record<string, string>): string {
+export function formatPrompt(template: string, variables: Record<string, string | undefined>): string {
   let formattedPrompt = template;
   for (const [key, value] of Object.entries(variables)) {
-    formattedPrompt = formattedPrompt.replace(new RegExp(`{${key}}`, 'g'), value);
+    if (value === undefined) {
+      formattedPrompt = formattedPrompt.replace(new RegExp(`.*{${key}}.*\\n?`, 'g'), '');
+    } else {
+      formattedPrompt = formattedPrompt.replace(new RegExp(`{${key}}`, 'g'), value);
+    }
   }
   return formattedPrompt;
 }

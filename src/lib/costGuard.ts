@@ -1,19 +1,18 @@
-import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, doc, getDoc, setDoc, increment } from 'firebase/firestore';
-import { getAuth } from 'firebase/auth';
+import { initializeApp, getApps, cert } from 'firebase-admin/app';
+import { getFirestore } from 'firebase-admin/firestore';
 
-// Initialize Firebase
-const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID
-};
+// Initialize Firebase Admin with Application Default Credentials
+if (!getApps().length) {
+  try {
+    initializeApp();
+    console.log('Firebase Admin initialized successfully');
+  } catch (error) {
+    console.error('Error initializing Firebase Admin:', error);
+    throw error;
+  }
+}
 
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
+const db = getFirestore();
 
 const DAILY_BUDGET_CAP = Number(process.env.DAILY_BUDGET_CAP) || 8; // Default to $8 if not set
 const TOKEN_COST_PER_1K = 0.01; // GPT-4 cost per 1K tokens
@@ -27,7 +26,7 @@ interface UsageRecord {
 
 export class CostGuard {
   private static instance: CostGuard;
-  private usageCollection = collection(db, 'openai_usage');
+  private usageCollection = db.collection('openai_usage');
 
   private constructor() {}
 
@@ -44,45 +43,57 @@ export class CostGuard {
 
   async checkUsageLimit(userId: string, estimatedTokens: number): Promise<boolean> {
     const today = this.getTodayKey();
-    const usageRef = doc(this.usageCollection, `${userId}_${today}`);
+    const usageRef = this.usageCollection.doc(`${userId}_${today}`);
     
     try {
-      const usageDoc = await getDoc(usageRef);
-      const currentUsage = usageDoc.exists() ? usageDoc.data() as UsageRecord : {
+      console.log('Checking usage limit for:', { userId, today, estimatedTokens });
+      const usageDoc = await usageRef.get();
+      console.log('Usage document exists:', usageDoc.exists);
+      
+      const currentUsage = usageDoc.exists ? usageDoc.data() as UsageRecord : {
         userId,
         date: today,
         tokensUsed: 0,
         cost: 0
       };
+      console.log('Current usage:', currentUsage);
 
       const estimatedCost = (estimatedTokens / 1000) * TOKEN_COST_PER_1K;
       const totalCost = currentUsage.cost + estimatedCost;
+      console.log('Cost calculation:', { estimatedCost, totalCost, DAILY_BUDGET_CAP });
 
       if (totalCost > DAILY_BUDGET_CAP) {
+        console.log('Usage limit exceeded');
         return false;
       }
 
       // Update usage
-      await setDoc(usageRef, {
+      await usageRef.set({
         ...currentUsage,
-        tokensUsed: increment(estimatedTokens),
-        cost: increment(estimatedCost)
+        tokensUsed: currentUsage.tokensUsed + estimatedTokens,
+        cost: currentUsage.cost + estimatedCost
       }, { merge: true });
+      console.log('Usage updated successfully');
 
       return true;
     } catch (error) {
       console.error('Error checking usage limit:', error);
-      throw new Error('Failed to check usage limit');
+      console.error('Error details:', {
+        code: error.code,
+        message: error.message,
+        stack: error.stack
+      });
+      throw new Error(`Failed to check usage limit: ${error.message}`);
     }
   }
 
   async getCurrentUsage(userId: string): Promise<UsageRecord> {
     const today = this.getTodayKey();
-    const usageRef = doc(this.usageCollection, `${userId}_${today}`);
+    const usageRef = this.usageCollection.doc(`${userId}_${today}`);
     
     try {
-      const usageDoc = await getDoc(usageRef);
-      if (!usageDoc.exists()) {
+      const usageDoc = await usageRef.get();
+      if (!usageDoc.exists) {
         return {
           userId,
           date: today,
