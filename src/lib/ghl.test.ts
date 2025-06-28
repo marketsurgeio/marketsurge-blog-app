@@ -9,7 +9,7 @@ process.env.GHL_BLOG_ID = 'test-blog-id';
 
 const server = setupServer(
   // Mock successful post creation
-  http.post('https://rest.gohighlevel.com/v1/blogs/posts', () => {
+  http.post('https://app.marketsurge.io/v2/blogs/posts', () => {
     return HttpResponse.json({
       success: true,
       data: {
@@ -20,7 +20,7 @@ const server = setupServer(
   }),
 
   // Mock successful post retrieval
-  http.get('https://rest.gohighlevel.com/v1/blogs/posts/:postId', () => {
+  http.get('https://app.marketsurge.io/v2/blogs/posts/:postId', () => {
     return new HttpResponse(null, { status: 200 });
   })
 );
@@ -48,7 +48,7 @@ describe('GHL Client', () => {
 
     it('should throw error when API returns error', async () => {
       server.use(
-        http.post('https://rest.gohighlevel.com/v1/blogs/posts', () => {
+        http.post('https://app.marketsurge.io/v2/blogs/posts', () => {
           return HttpResponse.json(
             {
               success: false,
@@ -80,7 +80,7 @@ describe('GHL Client', () => {
 
     it('should return false for non-existing post', async () => {
       server.use(
-        http.get('https://rest.gohighlevel.com/v1/blogs/posts/:postId', () => {
+        http.get('https://app.marketsurge.io/v2/blogs/posts/:postId', () => {
           return new HttpResponse(null, { status: 404 });
         })
       );

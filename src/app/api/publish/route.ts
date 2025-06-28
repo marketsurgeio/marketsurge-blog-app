@@ -35,9 +35,15 @@ export async function POST(req: NextRequest) {
     try {
       const response = await ghlClient.publishBlogPost({
         title,
-        html: content,
-        status: 'Published',
-        featuredImageUrl: '' // Required by GHL interface but not used
+        content,
+        status: 'published',
+        featuredImage: '', // Optional
+        slug: title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''), // Generate URL-friendly slug
+        metaTitle: title,
+        metaDescription: content.substring(0, 160), // Use first 160 chars as meta description
+        metaKeywords: keywords || [],
+        isPrivate: false,
+        allowComments: true
       });
 
       logger.info('Successfully published post', {
@@ -55,7 +61,6 @@ export async function POST(req: NextRequest) {
         industry,
         keywords: keywords || [],
         youtubeUrl: youtubeUrl || null,
-        url: response.url,
         status: 'Published',
         publishedAt: new Date().toISOString(),
         ghlPostId: response.id,
@@ -67,33 +72,37 @@ export async function POST(req: NextRequest) {
         switch (error.code) {
           case GHL_ERROR_CODES.AUTH_ERROR:
             return NextResponse.json(
-              { error: 'GHL authentication failed' },
+              { error: 'GHL authentication failed', details: error.details },
               { status: 401 }
             );
           case GHL_ERROR_CODES.RATE_LIMIT:
             return NextResponse.json(
-              { error: 'GHL rate limit exceeded' },
+              { error: 'GHL rate limit exceeded', details: error.details },
               { status: 429 }
             );
           case GHL_ERROR_CODES.VALIDATION_ERROR:
             return NextResponse.json(
-              { error: error.message },
+              { error: error.message, details: error.details },
               { status: 400 }
             );
           case GHL_ERROR_CODES.SERVER_ERROR:
             return NextResponse.json(
-              { error: 'GHL service unavailable' },
+              { error: 'GHL service unavailable', details: error.details },
               { status: 503 }
             );
           default:
             return NextResponse.json(
-              { error: 'Failed to publish post' },
+              { error: 'Failed to publish post', details: error.details },
               { status: 500 }
             );
         }
       }
 
-      throw error;
+      // Return full error details for debugging
+      return NextResponse.json(
+        { error: 'Failed to publish post', details: error },
+        { status: 500 }
+      );
     }
   } catch (error) {
     logger.error('Error in publish endpoint', { error });

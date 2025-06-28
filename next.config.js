@@ -6,24 +6,23 @@ const nextConfig = {
         source: '/:path*',
         headers: [
           {
-            key: 'Access-Control-Allow-Origin',
-            value: '*',
+            key: 'X-Frame-Options',
+            value: 'DENY'
           },
           {
-            key: 'Access-Control-Allow-Methods',
-            value: 'GET, POST, PUT, DELETE, OPTIONS',
+            key: 'X-Content-Type-Options',
+            value: 'nosniff'
           },
           {
-            key: 'Access-Control-Allow-Headers',
-            value: 'X-Requested-With, Content-Type, Authorization',
-          },
-          {
-            key: 'Content-Security-Policy',
-            value: "frame-ancestors 'self' https://challenges.cloudflare.com;",
-          },
-        ],
-      },
+            key: 'Referrer-Policy',
+            value: 'strict-origin-when-cross-origin'
+          }
+        ]
+      }
     ];
+  },
+  images: {
+    domains: ['images.unsplash.com', 'oaidalleapiprodscus.blob.core.windows.net'],
   },
   webpack: (config, { isServer }) => {
     // Handle native modules

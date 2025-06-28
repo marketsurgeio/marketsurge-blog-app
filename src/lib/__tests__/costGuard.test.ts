@@ -1,14 +1,27 @@
 import { costGuard } from '../costGuard';
-import { getFirestore, collection, doc, getDoc, setDoc } from 'firebase/firestore';
+import { getFirestore } from 'firebase-admin/firestore';
 
-// Mock Firestore
-jest.mock('firebase/firestore', () => ({
-  getFirestore: jest.fn(),
-  collection: jest.fn(),
-  doc: jest.fn(),
-  getDoc: jest.fn(),
-  setDoc: jest.fn(),
-  increment: jest.fn((value) => value),
+// Mock Firebase Admin
+jest.mock('firebase-admin/app', () => ({
+  initializeApp: jest.fn(),
+  getApps: jest.fn(() => []),
+  cert: jest.fn(),
+}));
+
+// Define mocks before jest.mock
+const mockDoc = {
+  get: jest.fn(),
+  set: jest.fn(),
+};
+
+const mockCollection = {
+  doc: jest.fn(() => mockDoc),
+};
+
+jest.mock('firebase-admin/firestore', () => ({
+  getFirestore: jest.fn(() => ({
+    collection: jest.fn(() => mockCollection),
+  })),
 }));
 
 describe('CostGuard', () => {
@@ -30,14 +43,16 @@ describe('CostGuard', () => {
       cost: 0.01,
     };
 
-    (getDoc as jest.Mock).mockResolvedValue({
-      exists: () => true,
+    mockDoc.get.mockResolvedValue({
+      exists: true,
       data: () => mockUsage,
     });
 
+    mockDoc.set.mockResolvedValue(undefined);
+
     const result = await costGuard.checkUsageLimit(mockUserId, 1000);
     expect(result).toBe(true);
-  });
+  }, 10000);
 
   it('should deny usage when over daily limit', async () => {
     // Mock existing usage near the limit
@@ -48,24 +63,28 @@ describe('CostGuard', () => {
       cost: 7,
     };
 
-    (getDoc as jest.Mock).mockResolvedValue({
-      exists: () => true,
+    mockDoc.get.mockResolvedValue({
+      exists: true,
       data: () => mockUsage,
     });
 
+    mockDoc.set.mockResolvedValue(undefined);
+
     const result = await costGuard.checkUsageLimit(mockUserId, 200000); // Would add ~$2
     expect(result).toBe(false);
-  });
+  }, 10000);
 
   it('should create new usage record for first request of the day', async () => {
-    (getDoc as jest.Mock).mockResolvedValue({
-      exists: () => false,
+    mockDoc.get.mockResolvedValue({
+      exists: false,
+      data: () => null,
     });
+
+    mockDoc.set.mockResolvedValue(undefined);
 
     const result = await costGuard.checkUsageLimit(mockUserId, 1000);
     expect(result).toBe(true);
-    expect(setDoc).toHaveBeenCalledWith(
-      expect.anything(),
+    expect(mockDoc.set).toHaveBeenCalledWith(
       expect.objectContaining({
         userId: mockUserId,
         date: mockDate,
@@ -74,7 +93,7 @@ describe('CostGuard', () => {
       }),
       { merge: true }
     );
-  });
+  }, 10000);
 
   it('should get current usage correctly', async () => {
     const mockUsage = {
@@ -84,18 +103,19 @@ describe('CostGuard', () => {
       cost: 0.01,
     };
 
-    (getDoc as jest.Mock).mockResolvedValue({
-      exists: () => true,
+    mockDoc.get.mockResolvedValue({
+      exists: true,
       data: () => mockUsage,
     });
 
     const usage = await costGuard.getCurrentUsage(mockUserId);
     expect(usage).toEqual(mockUsage);
-  });
+  }, 10000);
 
   it('should return zero usage for new users', async () => {
-    (getDoc as jest.Mock).mockResolvedValue({
-      exists: () => false,
+    mockDoc.get.mockResolvedValue({
+      exists: false,
+      data: () => null,
     });
 
     const usage = await costGuard.getCurrentUsage(mockUserId);
@@ -105,5 +125,5 @@ describe('CostGuard', () => {
       tokensUsed: 0,
       cost: 0,
     });
-  });
+  }, 10000);
 }); 

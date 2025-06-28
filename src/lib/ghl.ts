@@ -81,6 +81,16 @@ interface GHLBlogPostListData {
   hasMore: boolean;
 }
 
+interface GHLBlogDetailsResponse {
+  success: boolean;
+  message?: string;
+  data: {
+    id: string;
+    name: string;
+    url: string;
+  };
+}
+
 export class GHLError extends Error {
   constructor(
     message: string,
@@ -99,320 +109,75 @@ export const GHL_ERROR_CODES = {
   VALIDATION_ERROR: 'VALIDATION_ERROR',
   NOT_FOUND: 'NOT_FOUND',
   SERVER_ERROR: 'SERVER_ERROR',
+  REQUEST_FAILED: 'REQUEST_FAILED'
 } as const;
 
-async function handleGHLResponse(response: Response): Promise<unknown> {
-  const data = await response.json();
-
-  if (!response.ok) {
-    const error = data as GHLBadRequestError;
-    throw new GHLError(
-      error.message || 'An error occurred',
-      error.code || 'UNKNOWN_ERROR',
-      {
-        errors: error.errors,
-        details: error.details,
-        status: response.status,
-      }
-    );
-  }
-
-  return data;
+// Error DTOs
+interface GHLBadRequestDTO {
+  success: false;
+  error: {
+    message: string;
+    code: string;
+    details?: Record<string, unknown>;
+  };
 }
 
-export async function publishPost(post: GHLPost): Promise<GHLResponse> {
-  try {
-    const apiKey = process.env.GHL_API_KEY;
-    const blogId = process.env.GHL_BLOG_ID;
-
-    if (!apiKey || !blogId) {
-      throw new GHLError(
-        'GHL configuration is missing',
-        GHL_ERROR_CODES.CONFIG_ERROR
-      );
-    }
-
-    // Validate post data
-    if (!post.title?.trim()) {
-      throw new GHLError(
-        'Post title is required',
-        GHL_ERROR_CODES.VALIDATION_ERROR
-      );
-    }
-
-    if (!post.html?.trim()) {
-      throw new GHLError(
-        'Post content is required',
-        GHL_ERROR_CODES.VALIDATION_ERROR
-      );
-    }
-
-    const response = await fetch(`https://rest.gohighlevel.com/v1/blogs/${blogId}/posts`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        title: post.title,
-        content: post.html,
-        featuredImage: post.featuredImageUrl,
-        status: post.status.toLowerCase(),
-      }),
-    });
-
-    const data = await handleGHLResponse(response) as GHLResponse;
-
-    logger.info('Published post to GHL', {
-      postId: data.id,
-      title: post.title,
-    });
-
-    return {
-      id: data.id,
-      url: data.url,
-    };
-  } catch (error) {
-    logger.error('Failed to publish to GHL', { error });
-
-    if (error instanceof GHLError) {
-      throw error;
-    }
-
-    throw new GHLError(
-      'Failed to publish post to GHL',
-      GHL_ERROR_CODES.SERVER_ERROR,
-      error
-    );
-  }
+interface GHLUnauthorizedDTO {
+  success: false;
+  error: {
+    message: string;
+    code: 'UNAUTHORIZED';
+  };
 }
 
-export async function getBlogDetails(): Promise<{
+interface GHLUnprocessableDTO {
+  success: false;
+  error: {
+    message: string;
+    code: 'VALIDATION_ERROR';
+    details: {
+      field: string;
+      message: string;
+      code: string;
+    }[];
+  };
+}
+
+// Blog Post DTOs
+interface GHLBlogPostResponseDTO {
   id: string;
-  name: string;
-  url: string;
-}> {
-  try {
-    const apiKey = process.env.GHL_API_KEY;
-    const blogId = process.env.GHL_BLOG_ID;
-
-    if (!apiKey || !blogId) {
-      throw new GHLError(
-        'GHL configuration is missing',
-        GHL_ERROR_CODES.CONFIG_ERROR
-      );
-    }
-
-    const response = await fetch(`https://rest.gohighlevel.com/v1/blogs/${blogId}`, {
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-      },
-    });
-
-    const data = await handleGHLResponse(response) as { id: string; name: string; url: string };
-
-    return {
-      id: data.id,
-      name: data.name,
-      url: data.url,
-    };
-  } catch (error) {
-    logger.error('Failed to get GHL blog details', { error });
-
-    if (error instanceof GHLError) {
-      throw error;
-    }
-
-    throw new GHLError(
-      'Failed to get blog details from GHL',
-      GHL_ERROR_CODES.SERVER_ERROR,
-      error
-    );
-  }
-}
-
-// Helper function to check if a post exists
-export async function getPost(postId: string): Promise<boolean> {
-  const apiKey = process.env.GHL_API_KEY;
-  
-  if (!apiKey) {
-    throw new Error('GHL_API_KEY environment variable is required');
-  }
-
-  const response = await fetch(
-    `https://rest.gohighlevel.com/v1/blogs/posts/${postId}`,
-    {
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-      },
-    }
-  );
-
-  return response.ok;
-}
-
-interface GHLBlogPost {
   title: string;
-  html: string;
-  featuredImageUrl: string;
-  status: 'Draft' | 'Published';
-  blogId: string;
-  slug?: string;
+  content: string;
+  featuredImage?: string;
+  status: 'draft' | 'published';
+  slug: string;
   authorId?: string;
   categoryIds?: string[];
-}
-
-interface GHLBlogPostListParams {
-  page?: number;
-  limit?: number;
-  status?: 'Draft' | 'Published' | 'All';
-  search?: string;
-  authorId?: string;
-  categoryId?: string;
-}
-
-interface GHLBlogPostListResponse {
-  success: boolean;
-  message?: string;
-  data: {
-    posts: GHLPost[];
-    total: number;
-    page: number;
-    limit: number;
-    hasMore: boolean;
-  };
-}
-
-interface GHLAuthor {
-  id: string;
-  name: string;
-  email: string;
-  avatar?: string;
-  bio?: string;
-  website?: string;
-  social?: {
-    facebook?: string;
-    twitter?: string;
-    linkedin?: string;
-    instagram?: string;
-  };
-  createdAt: string;
-  updatedAt: string;
-}
-
-interface GHLAuthorCreate {
-  name: string;
-  email: string;
-  avatar?: string;
-  bio?: string;
-  website?: string;
-  social?: {
-    facebook?: string;
-    twitter?: string;
-    linkedin?: string;
-    instagram?: string;
-  };
-}
-
-interface GHLAuthorUpdate extends Partial<GHLAuthorCreate> {
-  id: string;
-}
-
-interface GHLAuthorResponse {
-  success: boolean;
-  message?: string;
-  data: GHLAuthor;
-}
-
-interface GHLAuthorListResponse {
-  success: boolean;
-  message?: string;
-  data: GHLAuthor[];
-}
-
-interface GHLAuthorListParams {
-  page?: number;
-  limit?: number;
-  search?: string;
-}
-
-interface GHLAuthorListResponse {
-  success: boolean;
-  message?: string;
-  data: GHLAuthor[];
-}
-
-interface GHLCategory {
-  id: string;
-  name: string;
-  slug: string;
-  description?: string;
-  parentId?: string;
-  postCount: number;
-  createdAt: string;
-  updatedAt: string;
-}
-
-interface GHLCategoryCreate {
-  name: string;
-  slug?: string;
-  description?: string;
-  parentId?: string;
-}
-
-interface GHLCategoryUpdate extends Partial<GHLCategoryCreate> {
-  id: string;
-}
-
-interface GHLCategoryListParams {
-  page?: number;
-  limit?: number;
-  search?: string;
-  parentId?: string;
-}
-
-interface GHLCategoryListResponse {
-  categories: GHLCategory[];
-  total: number;
-  page: number;
-  limit: number;
-  hasMore: boolean;
-}
-
-interface GHLBlog {
-  id: string;
-  name: string;
-  description?: string;
-  locationId: string;
-  isPrivate: boolean;
-  allowComments: boolean;
   metaTitle?: string;
   metaDescription?: string;
   metaKeywords?: string[];
+  tags?: string[];
   createdAt: string;
   updatedAt: string;
+  publishedAt?: string;
 }
 
-interface GHLBlogListResponse {
-  success: boolean;
-  message?: string;
-  data: {
-    blogs: GHLBlog[];
-    total: number;
-    page: number;
-    limit: number;
-    hasMore: boolean;
-  };
+interface GHLBlogPostCreateParams {
+  title: string;
+  content: string;
+  featuredImage?: string;
+  status?: 'draft' | 'published';
+  slug?: string;
+  authorId?: string;
+  categoryIds?: string[];
+  metaTitle?: string;
+  metaDescription?: string;
+  metaKeywords?: string[];
+  tags?: string[];
+  publishedAt?: string;
 }
 
-interface GHLBlogListParams {
-  page?: number;
-  limit?: number;
-  search?: string;
-  locationId?: string;
-}
-
-interface GHLBlogPostUpdate {
+interface GHLBlogPostUpdateParams {
   title?: string;
   content?: string;
   featuredImage?: string;
@@ -423,142 +188,149 @@ interface GHLBlogPostUpdate {
   metaTitle?: string;
   metaDescription?: string;
   metaKeywords?: string[];
-  publishedAt?: string;
-  isFeatured?: boolean;
-  isPrivate?: boolean;
-  allowComments?: boolean;
   tags?: string[];
-}
-
-interface GHLBlogPostUpdateResponse {
-  success: boolean;
-  message: string;
-  data: {
-    id: string;
-    title: string;
-    content: string;
-    featuredImage?: string;
-    status: 'draft' | 'published';
-    slug: string;
-    authorId?: string;
-    categoryIds?: string[];
-    metaTitle?: string;
-    metaDescription?: string;
-    metaKeywords?: string[];
-    publishedAt?: string;
-    isFeatured: boolean;
-    isPrivate: boolean;
-    allowComments: boolean;
-    tags?: string[];
-    createdAt: string;
-    updatedAt: string;
-  };
-}
-
-interface GHLBlogPostCreate {
-  title: string;
-  content: string;
-  featuredImage?: string;
-  status: 'draft' | 'published';
-  slug?: string;
-  authorId?: string;
-  categoryIds?: string[];
-  metaTitle?: string;
-  metaDescription?: string;
-  metaKeywords?: string[];
   publishedAt?: string;
-  isFeatured?: boolean;
-  isPrivate?: boolean;
-  allowComments?: boolean;
-  tags?: string[];
 }
 
-interface GHLBlogPostCreateResponse {
-  success: boolean;
-  message: string;
-  data: {
-    id: string;
-    title: string;
-    content: string;
-    featuredImage?: string;
-    status: 'draft' | 'published';
-    slug: string;
-    authorId?: string;
-    categoryIds?: string[];
-    metaTitle?: string;
-    metaDescription?: string;
-    metaKeywords?: string[];
-    publishedAt?: string;
-    isFeatured: boolean;
-    isPrivate: boolean;
-    allowComments: boolean;
-    tags?: string[];
-    createdAt: string;
-    updatedAt: string;
-  };
-}
-
-interface GHLBlogCreate {
-  name: string;
-  description?: string;
-  locationId: string;
-  isPrivate: boolean;
-  allowComments: boolean;
-  metaTitle?: string;
-  metaDescription?: string;
-  metaKeywords?: string[];
-}
-
-interface GHLBlogResponse {
+// Response Wrapper DTOs
+interface GHLResponseWrapper<T> {
   success: boolean;
   message?: string;
-  data: GHLBlog;
+  data: T;
 }
 
-interface GHLBlogPostResponse {
-  success: boolean;
-  message?: string;
-  data: GHLPost;
+type GHLPost = GHLBlogPostResponseDTO;
+type GHLBlogPostCreate = GHLBlogPostCreateParams;
+type GHLBlogPostUpdate = GHLBlogPostUpdateParams;
+type GHLResponse<T> = GHLResponseWrapper<T>;
+
+async function handleGHLResponse<T>(response: Response): Promise<T> {
+  const contentType = response.headers.get('content-type');
+  let data: unknown;
+
+  if (contentType?.includes('application/json')) {
+    data = await response.json();
+  } else if (contentType?.includes('text/xml') || contentType?.includes('application/xml')) {
+    const text = await response.text();
+    // Parse XML error response
+    const errorMatch = text.match(/<Message>(.*?)<\/Message>/);
+    const codeMatch = text.match(/<Code>(.*?)<\/Code>/);
+    data = {
+      error: {
+        message: errorMatch ? errorMatch[1] : 'Unknown error',
+        code: codeMatch ? codeMatch[1] : 'UNKNOWN_ERROR'
+      }
+    };
+  } else {
+    const text = await response.text();
+    try {
+      data = JSON.parse(text);
+    } catch (e) {
+      data = { text };
+    }
+  }
+
+  if (!response.ok) {
+    const errorData = data as any;
+    const errorMessage = errorData?.error?.message || 
+                        errorData?.message || 
+                        'An error occurred while communicating with the GHL API';
+    const errorCode = errorData?.error?.code || 
+                     errorData?.code || 
+                     'UNKNOWN_ERROR';
+    
+    throw new GHLError(
+      errorMessage,
+      errorCode,
+      {
+        status: response.status,
+        error: errorData
+      }
+    );
+  }
+
+  return data as T;
 }
 
-export class GHLClient {
-  private static instance: GHLClient;
-  private readonly apiKey: string;
-  private readonly baseUrl = 'https://rest.gohighlevel.com/v1';
-  private readonly locationId: string;
+export async function publishPost(post: GHLPost): Promise<GHLResponse<GHLPost>> {
+  if (!this.apiKey || !this.blogId) {
+    throw new GHLError(
+      'GHL configuration is missing',
+      GHL_ERROR_CODES.CONFIG_ERROR
+    );
+  }
 
-  private constructor() {
-    const apiKey = process.env.GHL_API_KEY;
-    const locationId = process.env.GHL_LOCATION_ID;
+  // Validate post data
+  this.validatePostData(post);
 
-    if (!apiKey || !locationId) {
+  try {
+    const response = await fetch(
+      `${this.baseUrl}/locations/${this.locationId}/blogs/${this.blogId}/posts`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ...post,
+          blogId: this.blogId,
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.json();
       throw new GHLError(
-        'GHL configuration is missing',
-        GHL_ERROR_CODES.CONFIG_ERROR
+        'Failed to publish post',
+        GHL_ERROR_CODES.REQUEST_FAILED,
+        {
+          status: response.status,
+          error,
+        }
       );
     }
 
-    this.apiKey = apiKey;
-    this.locationId = locationId;
-
-    logger.info('GHL Client initialized', {
-      locationId: this.locationId,
-      apiKeyLength: this.apiKey.length
-    });
-  }
-
-  static getInstance(): GHLClient {
-    if (!GHLClient.instance) {
-      GHLClient.instance = new GHLClient();
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    if (error instanceof GHLError) {
+      throw error;
     }
-    return GHLClient.instance;
+    throw new GHLError(
+      'Failed to publish post',
+      GHL_ERROR_CODES.REQUEST_FAILED,
+      {
+        error,
+      }
+    );
+  }
+}
+
+export class GHLClient {
+  private baseUrl: string;
+  private token: string;
+  private locationId: string;
+  private blogId: string;
+
+  constructor() {
+    this.baseUrl = 'https://services.leadconnectorhq.com';
+    this.token = process.env.GHL_PRIVATE_INTEGRATION_TOKEN || '';
+    this.locationId = process.env.GHL_LOCATION_ID || '';
+    this.blogId = process.env.GHL_BLOG_ID || '';
+
+    if (!this.token || !this.locationId || !this.blogId) {
+      throw new Error('Missing required environment variables');
+    }
   }
 
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<GHLResponse<T>> {
     const url = `${this.baseUrl}${endpoint}`;
     const headers = {
+      'Accept': 'application/json',
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${this.apiKey}`,
+      'Authorization': this.token,
+      'Version': '2021-07-28',
       ...options.headers,
     };
 
@@ -569,22 +341,24 @@ export class GHLClient {
       });
 
       if (!response.ok) {
-        const error = await response.json().catch(() => ({}));
+        const errorData = await response.json().catch(() => ({}));
         throw new GHLError(
-          error.message || `HTTP error! status: ${response.status}`,
-          'REQUEST_FAILED',
-          { status: response.status, error }
+          errorData.message || 'An error occurred while communicating with the GHL API',
+          'UNKNOWN_ERROR',
+          {
+            status: response.status,
+            error: errorData
+          }
         );
       }
 
       const data = await response.json();
       return {
         success: true,
-        message: data.message,
-        data: data.data
+        data: data as T
       };
     } catch (error) {
-      logger.error('Request failed', { error, url, options });
+      logger.error('GHL API request failed', { error, url, endpoint });
       throw error;
     }
   }
@@ -980,7 +754,7 @@ export class GHLClient {
     return errors;
   }
 
-  async createBlogPost(blogId: string, post: GHLBlogPostCreate): Promise<GHLBlogPostCreateResponse['data']> {
+  async createBlogPost(blogId: string, post: GHLBlogPostCreate): Promise<GHLPost> {
     try {
       // Validate post data
       const validationErrors = this.validatePostCreate(post);
@@ -1008,8 +782,8 @@ export class GHLClient {
         }
       }
 
-      const response = await this.request<GHLBlogPostCreateResponse>(
-        `/blogs/${blogId}/posts`,
+      const response = await this.request<GHLPost>(
+        `/locations/${this.locationId}/content-management/posts`,
         {
           method: 'POST',
           body: JSON.stringify(post),
@@ -1030,37 +804,29 @@ export class GHLClient {
     }
   }
 
-  async getBlogDetails(): Promise<{
-    id: string;
-    name: string;
-    url: string;
-  }> {
+  public async getBlogDetails(): Promise<GHLResponse<GHLBlogDetailsResponse['data']>> {
     try {
-      const blogId = process.env.GHL_BLOG_ID;
-
-      if (!blogId) {
+      const response = await this.request<GHLResponse<GHLBlogDetailsResponse['data']>>(
+        `/v2/locations/${this.locationId}/blogs/${this.blogId}`
+      );
+      
+      if (!response.success) {
         throw new GHLError(
-          'Blog ID is missing',
-          GHL_ERROR_CODES.CONFIG_ERROR
+          response.message || 'Failed to fetch blog details',
+          'FETCH_FAILED'
         );
       }
 
-      const response = await this.request<{
-        id: string;
-        name: string;
-        url: string;
-      }>(`/blogs/${blogId}`);
-
       return response;
     } catch (error) {
-      logger.error('Failed to get blog details', { error });
+      logger.error('Failed to fetch blog details', { error });
       throw error;
     }
   }
 
   async getBlogPost(blogId: string, postId: string): Promise<GHLPost> {
     try {
-      const response = await this.request<GHLBlogPostResponse>(
+      const response = await this.request<GHLPost>(
         `/blogs/${blogId}/posts/${postId}`,
         { method: 'GET' }
       );
@@ -1433,7 +1199,7 @@ export class GHLClient {
     return errors;
   }
 
-  async updateBlogPost(blogId: string, postId: string, post: GHLBlogPostUpdate): Promise<GHLPost> {
+  public async updateBlogPost(blogId: string, postId: string, post: GHLBlogPostUpdate): Promise<GHLPost> {
     try {
       // Validate post data
       const validationErrors = this.validatePostUpdate(post);
@@ -1468,14 +1234,14 @@ export class GHLClient {
           body: JSON.stringify(post),
         }
       );
-      return response;
+      return response.data;
     } catch (error) {
       logger.error('Failed to update blog post', { error, blogId, postId, post });
       throw error;
     }
   }
 
-  async deleteBlogPost(blogId: string, postId: string): Promise<void> {
+  public async deleteBlogPost(blogId: string, postId: string): Promise<void> {
     try {
       await this.request(
         `/blogs/${blogId}/posts/${postId}`,
@@ -1693,16 +1459,14 @@ export class GHLClient {
     }
   }
 
-  async getBlogs(params: GHLBlogListParams = {}): Promise<GHLBlogListResponse> {
+  async getBlogs(params: GHLBlogListParams = {}): Promise<GHLBlogListResponse['data']> {
     try {
-      const queryParams = new URLSearchParams();
-      if (params.page) queryParams.append('page', params.page.toString());
-      if (params.limit) queryParams.append('limit', params.limit.toString());
-      if (params.search) queryParams.append('search', params.search);
-      if (params.locationId) queryParams.append('locationId', params.locationId);
-
-      const response = await this.request<GHLBlogListResponse>(
-        `/blogs?${queryParams.toString()}`
+      const response = await this.request<GHLBlogListResponse['data']>(
+        '/blogs',
+        {
+          method: 'GET',
+          params
+        }
       );
 
       if (!response.success) {
@@ -1714,40 +1478,34 @@ export class GHLClient {
 
       return response.data;
     } catch (error) {
-      logger.error('Failed to fetch blogs', { error, params });
+      logger.error('Failed to fetch blogs', { error });
       throw error;
     }
   }
 
   async publishBlogPost(post: GHLBlogPostCreate): Promise<GHLPost> {
     try {
-      const validationErrors = this.validatePostCreate(post);
-      if (validationErrors.length > 0) {
-        throw new GHLError(
-          'Post validation failed',
-          'VALIDATION_ERROR',
-          { validationErrors }
-        );
-      }
-
-      const response = await this.request<GHLPost>(`/blogs/${post.blogId}/posts`, {
+      const response = await this.request<GHLPost>(`/blogs/${this.blogId}/posts`, {
         method: 'POST',
-        body: JSON.stringify(post),
+        body: JSON.stringify({
+          ...post,
+          blogId: this.blogId
+        }),
       });
 
       if (!response.success) {
         throw new GHLError(
-          response.message || 'Failed to publish blog post',
+          response.message || 'Failed to publish post',
           'PUBLISH_FAILED'
         );
       }
 
       return response.data;
     } catch (error) {
-      logger.error('Failed to publish blog post', { error, post });
+      logger.error('Failed to publish post', { error, post });
       throw error;
     }
   }
 }
 
-export const ghlClient = GHLClient.getInstance(); 
+export const ghlClient = new GHLClient(); 

@@ -1,64 +1,42 @@
 import { NextResponse } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
-import { GHLError } from '@/lib/ghl';
+import { GHLClient } from '@/lib/ghl';
 import { logger } from '@/lib/logger';
 
 export async function GET() {
   try {
-    const session = await auth();
-    if (!session?.userId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const apiKey = process.env.GHL_API_KEY;
-    const blogId = process.env.GHL_BLOG_ID;
-
-    if (!apiKey || !blogId) {
-      throw new GHLError('GHL configuration is missing', 'CONFIG_ERROR');
-    }
-
-    // Test the connection by fetching blog details
-    const response = await fetch(`https://rest.gohighlevel.com/v1/blogs/${blogId}`, {
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-      },
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new GHLError(
-        error.message || 'Failed to connect to GHL',
-        'CONNECTION_ERROR'
-      );
-    }
-
-    const data = await response.json();
-
-    logger.info('GHL connection test successful', {
-      blogId,
-      blogName: data.name,
-    });
-
-    return NextResponse.json({
-      success: true,
-      blog: {
-        id: data.id,
-        name: data.name,
-        url: data.url,
-      },
-    });
-  } catch (error) {
-    logger.error('GHL connection test failed', { error });
-
-    if (error instanceof GHLError) {
+    const client = GHLClient.getInstance();
+    logger.info('GHL Client initialized');
+    
+    // Check if environment variables are set
+    if (!process.env.GHL_PRIVATE_INTEGRATION_TOKEN || !process.env.GHL_BLOG_ID || !process.env.GHL_LOCATION_ID) {
+      logger.error('Missing GHL environment variables', {
+        hasPrivateIntegrationToken: !!process.env.GHL_PRIVATE_INTEGRATION_TOKEN,
+        hasBlogId: !!process.env.GHL_BLOG_ID,
+        hasLocationId: !!process.env.GHL_LOCATION_ID
+      });
       return NextResponse.json(
-        { error: error.message },
-        { status: error.code === 'CONFIG_ERROR' ? 500 : 400 }
+        { success: false, error: 'Missing GHL configuration' },
+        { status: 500 }
       );
     }
 
+    const blogDetails = await client.getBlogDetails();
+    logger.info('Blog details fetched successfully', { blogDetails });
+    
+    return NextResponse.json({ success: true, data: blogDetails });
+  } catch (error: unknown) {
+    logger.error('GHL test endpoint error:', { 
+      error,
+      errorMessage: error instanceof Error ? error.message : 'Unknown error',
+      errorStack: error instanceof Error ? error.stack : undefined
+    });
+    
     return NextResponse.json(
-      { error: 'Failed to test GHL connection' },
+      { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Unknown error',
+        details: error instanceof Error ? error.stack : undefined
+      },
       { status: 500 }
     );
   }
